@@ -1,9 +1,10 @@
-// ignore_for_file: avoid-similar-names
-
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:meta/meta.dart';
 import 'package:flutter/painting.dart';
+
+import 'package:pretty_qr_code/src/base/pretty_qr_version.dart';
 
 import 'package:pretty_qr_code/src/rendering/pretty_qr_painting_context.dart';
 import 'package:pretty_qr_code/src/rendering/pretty_qr_render_capabilities.dart';
@@ -15,7 +16,7 @@ import 'package:pretty_qr_code/src/painting/extensions/pretty_qr_rectangle_exten
 
 /// A square modules that can be rounded.
 @sealed
-class PrettyQrSquaresSymbol implements PrettyQrShape {
+class PrettyQrSquaresSymbol extends PrettyQrShape {
   /// The color or brush to use when filling the QR Code.
   @nonVirtual
   final Color color;
@@ -47,17 +48,17 @@ class PrettyQrSquaresSymbol implements PrettyQrShape {
 
   @override
   void paint(PrettyQrPaintingContext context) {
-    final path = Path();
-    final brush = PrettyQrBrush.from(color);
-
     final matrix = context.matrix;
     final canvasBounds = context.estimatedBounds;
     final moduleDimension = canvasBounds.longestSide / matrix.version.dimension;
+    final needsAvoidComplexPaths = _needsAvoidComplexPaths(context);
 
+    final brush = PrettyQrBrush.from(color);
     final fillPaint = brush.toPaint(
       canvasBounds,
       textDirection: context.textDirection,
     )..style = PaintingStyle.fill;
+    fillPaint.strokeCap = StrokeCap.square;
 
     if (unifiedFinderPattern) {
       final strokePaint = brush.toPaint(
@@ -116,26 +117,46 @@ class PrettyQrSquaresSymbol implements PrettyQrShape {
 
     final radius = moduleDimension / 2;
     final effectiveRadius = clampDouble(radius * rounding, 0, radius);
-    final effectiveDensity = radius - clampDouble(radius * density, 1, radius);
+    final effectiveDensity = clampDouble(radius * density, 1, radius);
 
+    final modulesPath = Path();
+    final modulesPoints = Float32List(matrix.length * 2);
+
+    int modulesCount = 0;
     for (final module in context.matrix) {
       if (!module.isDark) continue;
       if (unifiedFinderPattern && module.isFinderPattern) continue;
 
       final moduleRect = module.resolveRect(context);
-      final moduleRRect = RRect.fromRectAndRadius(
-        moduleRect,
-        Radius.circular(effectiveRadius),
-      ).deflate(effectiveDensity);
-
-      if (PrettyQrRenderCapabilities.needsAvoidComplexPaths) {
-        context.canvas.drawRRect(moduleRRect, fillPaint);
+      if (rounding <= 0.001) {
+        modulesPoints[modulesCount++] = moduleRect.center.dx;
+        modulesPoints[modulesCount++] = moduleRect.center.dy;
       } else {
-        path.addRRect(moduleRRect);
+        final moduleRRect = RRect.fromRectAndRadius(
+          moduleRect,
+          Radius.circular(effectiveRadius),
+        ).deflate(radius - effectiveDensity);
+
+        if (needsAvoidComplexPaths) {
+          context.canvas.drawRRect(moduleRRect, fillPaint);
+        } else {
+          modulesPath.addRRect(moduleRRect);
+        }
       }
     }
 
-    context.canvas.drawPath(path, fillPaint);
+    context.canvas.drawPath(modulesPath, fillPaint);
+    context.canvas.drawRawPoints(
+      PointMode.points,
+      Float32List.sublistView(modulesPoints, 0, modulesCount),
+      fillPaint..strokeWidth = effectiveDensity * 2,
+    );
+  }
+
+  @protected
+  bool _needsAvoidComplexPaths(PrettyQrPaintingContext context) {
+    if (PrettyQrRenderCapabilities.needsAvoidComplexPaths) return true;
+    return context.matrix.version > PrettyQrVersion.version16;
   }
 
   @override

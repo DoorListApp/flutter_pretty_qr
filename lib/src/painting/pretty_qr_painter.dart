@@ -1,15 +1,18 @@
 import 'dart:math';
 
 import 'package:meta/meta.dart';
-import 'package:flutter/painting.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/foundation.dart';
 
 import 'package:pretty_qr_code/src/base/pretty_qr_matrix.dart';
 
 import 'package:pretty_qr_code/src/rendering/pretty_qr_painting_context.dart';
+import 'package:pretty_qr_code/src/rendering/pretty_qr_render_capabilities.dart';
 
 import 'package:pretty_qr_code/src/painting/pretty_qr_brush.dart';
 import 'package:pretty_qr_code/src/painting/decoration/pretty_qr_decoration.dart';
 import 'package:pretty_qr_code/src/painting/decoration/pretty_qr_decoration_image.dart';
+import 'package:pretty_qr_code/src/painting/extensions/pretty_qr_module_extensions.dart';
 import 'package:pretty_qr_code/src/painting/extensions/pretty_qr_quiet_zone_extension.dart';
 
 /// A stateful class that can paint a QR code.
@@ -26,6 +29,10 @@ class PrettyQrPainter {
   /// What decoration to paint.
   @nonVirtual
   final PrettyQrDecoration decoration;
+
+  /// The QR code clipped matrix cache.
+  @protected
+  PrettyQrMatrix? _clippedMatrix;
 
   /// The painter for a [PrettyQrDecorationImage].
   @protected
@@ -62,8 +69,6 @@ class PrettyQrPainter {
     }
 
     final image = decoration.image;
-    final size = context.estimatedBounds.size;
-
     if (image == null) {
       decoration.shape.paint(context);
       return;
@@ -74,23 +79,35 @@ class PrettyQrPainter {
     }
 
     final imageScale = image.scale.clamp(0.0, 1.0);
-    final imageScaledRect = Rect.fromCenter(
-      center: size.center(Offset.zero),
-      width: size.width * imageScale,
-      height: size.height * imageScale,
-    );
-
+    final shapeBounds = decoration.shape.getBounds(context);
     final imagePadding = (image.padding * imageScale).resolve(
       configuration.textDirection,
     );
-    final imageCroppedRect = imagePadding.deflateRect(imageScaledRect);
+
+    final imageScaledRect = Rect.fromCenter(
+      center: shapeBounds.center,
+      width: shapeBounds.size.width * imageScale,
+      height: shapeBounds.size.height * imageScale,
+    );
+    final imageDeflatedRect = imagePadding.deflateRect(imageScaledRect);
+
+    final imageClipPath = image.clipper.getClip(imageScaledRect.size);
+    final imageClipTransform = Matrix4.identity()
+      ..translate(
+        imageDeflatedRect.topLeft.dx,
+        imageDeflatedRect.topLeft.dy,
+      )
+      ..scale(
+        imageDeflatedRect.width / imageScaledRect.width,
+        imageDeflatedRect.height / imageScaledRect.height,
+      );
 
     _decorationImagePainter ??= image.createPainter(onChanged);
     _decorationImagePainter?.paint(
       context.canvas,
-      imageCroppedRect,
-      null,
-      configuration.copyWith(size: imageCroppedRect.size),
+      imageDeflatedRect,
+      imageClipPath.transform(imageClipTransform.storage),
+      configuration.copyWith(size: imageDeflatedRect.size),
     );
 
     switch (image.position) {
@@ -100,27 +117,76 @@ class PrettyQrPainter {
         decoration.shape.paint(context);
         return;
       case PrettyQrDecorationImagePosition.embedded:
-        final moduleSize = context.boundsDimension / context.matrix.dimension;
-        final clippedMatrix = PrettyQrMatrix.masked(
-          context.matrix,
-          clip: Rectangle.fromPoints(
-            Point(
-              imageCroppedRect.left / moduleSize ~/ 1,
-              imageCroppedRect.top / moduleSize ~/ 1,
-            ),
-            Point(
-              imageCroppedRect.right / moduleSize ~/ 1,
-              imageCroppedRect.bottom / moduleSize ~/ 1,
-            ),
-          ),
-        );
-        decoration.shape.paint(context.copyWith(matrix: clippedMatrix));
+        try {
+          _clippedMatrix ??= _prepareMatrix(
+            context,
+            clippedPath: imageClipPath.shift(imageScaledRect.topLeft),
+          );
+          decoration.shape.paint(context.copyWith(matrix: _clippedMatrix));
+        } on Object catch (error, stackTrace) {
+          decoration.shape.paint(context);
+          assert(() {
+            FlutterError.reportError(
+              FlutterErrorDetails(
+                silent: true,
+                stack: stackTrace,
+                exception: error,
+                library: 'pretty qr code',
+                context: ErrorDescription('while embedding image into qr code'),
+              ),
+            );
+            return true;
+          }());
+        }
     }
+  }
+
+  @protected
+  PrettyQrMatrix _prepareMatrix(
+    final PrettyQrPaintingContext context, {
+    required Path clippedPath,
+  }) {
+    final clipBounds = clippedPath.getBounds();
+    final shapeBounds = decoration.shape.getBounds(context);
+
+    final matrixDimension = context.matrix.dimension;
+    final moduleDimension = shapeBounds.longestSide / matrixDimension;
+    final clipMatrixBounds = Rectangle(
+      (matrixDimension - clipBounds.width / moduleDimension) ~/ 2,
+      (matrixDimension - clipBounds.height / moduleDimension) ~/ 2,
+      (clipBounds.width / moduleDimension).ceil(),
+      (clipBounds.height / moduleDimension).ceil(),
+    );
+
+    final excludedPoints = <Point>{};
+    for (final module in context.matrix) {
+      if (!clipMatrixBounds.containsPoint(module)) {
+        continue;
+      }
+
+      if (PrettyQrRenderCapabilities.enableClippersForNestedImage) {
+        final intersectedModulePath = Path.combine(
+          PathOperation.intersect,
+          clippedPath,
+          Path()..addRect(module.toRect(moduleDimension, shapeBounds.topLeft)),
+        );
+        if (intersectedModulePath.getBounds().isEmpty) continue;
+      }
+
+      // ignore: avoid-ignoring-return-values, doesn't matter.
+      excludedPoints.add(module.position);
+    }
+
+    return PrettyQrMatrix.masked(
+      context.matrix,
+      excludePoints: excludedPoints,
+    );
   }
 
   /// Discard any resources being held by the object.
   @mustCallSuper
   void dispose() {
+    _clippedMatrix = null;
     _decorationImagePainter?.dispose();
     _decorationImagePainter = null;
   }

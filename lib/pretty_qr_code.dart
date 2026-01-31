@@ -15,11 +15,16 @@ export 'src/base/pretty_qr_matrix.dart';
 export 'src/base/pretty_qr_module.dart';
 export 'src/base/pretty_qr_version.dart';
 export 'src/base/pretty_qr_neighbour_direction.dart';
+export 'src/base/components/pretty_qr_component.dart';
 
 // painting
 export 'src/painting/pretty_qr_brush.dart';
+export 'src/painting/pretty_qr_clipper.dart';
 export 'src/painting/pretty_qr_shape.dart' hide clampDouble;
 export 'src/painting/pretty_qr_quiet_zone.dart';
+
+export 'src/painting/clippers/pretty_qr_circle_clipper.dart';
+export 'src/painting/clippers/pretty_qr_rectangle_clipper.dart';
 
 export 'src/painting/shapes/pretty_qr_dots_symbol.dart';
 export 'src/painting/shapes/pretty_qr_rounded_symbol.dart';
