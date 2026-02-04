@@ -81,20 +81,31 @@ class PrettyQrSmoothSymbol extends PrettyQrShape {
     final Rect moduleRect,
     final Set<PrettyQrNeighbourDirection> neighbours,
   ) {
-    final cornersRadius = Radius.circular(
-      24 * roundFactor.clamp(0.0, 1.0),
-    );
+    final factor = roundFactor.clamp(0.0, 1.0);
+    final outerRadius = Radius.circular(24 * factor);
+    final innerRadius = Radius.circular(22 * factor);
+    final centerRadius = Radius.circular(12 * factor);
 
+    // Center square (no neighbors) - radius 12
     if (!neighbours.hasClosest) {
-      return RRect.fromRectAndRadius(moduleRect, cornersRadius / 2);
+      return RRect.fromRectAndRadius(moduleRect, centerRadius);
     }
 
+    // For outer ring: outer edge = 24, inner edge = 22
     return RRect.fromRectAndCorners(
       moduleRect,
-      topLeft: neighbours.atTopOrLeft ? Radius.zero : cornersRadius,
-      topRight: neighbours.atTopOrRight ? Radius.zero : cornersRadius,
-      bottomLeft: neighbours.atBottomOrLeft ? Radius.zero : cornersRadius,
-      bottomRight: neighbours.atBottomOrRight ? Radius.zero : cornersRadius,
+      topLeft: neighbours.atTopOrLeft
+          ? (neighbours.atTopAndLeft ? Radius.zero : innerRadius)
+          : outerRadius,
+      topRight: neighbours.atTopOrRight
+          ? (neighbours.atTopAndRight ? Radius.zero : innerRadius)
+          : outerRadius,
+      bottomLeft: neighbours.atBottomOrLeft
+          ? (neighbours.atBottomAndLeft ? Radius.zero : innerRadius)
+          : outerRadius,
+      bottomRight: neighbours.atBottomOrRight
+          ? (neighbours.atBottomAndRight ? Radius.zero : innerRadius)
+          : outerRadius,
     );
   }
 
