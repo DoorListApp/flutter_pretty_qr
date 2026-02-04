@@ -82,7 +82,7 @@ class PrettyQrSmoothSymbol extends PrettyQrShape {
     final Set<PrettyQrNeighbourDirection> neighbours,
   ) {
     final cornersRadius = Radius.circular(
-      moduleRect.shortestSide / 2 * roundFactor.clamp(0.0, 1.0),
+      24 * roundFactor.clamp(0.0, 1.0),
     );
 
     if (!neighbours.hasClosest) {
