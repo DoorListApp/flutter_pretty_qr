@@ -83,29 +83,20 @@ class PrettyQrSmoothSymbol extends PrettyQrShape {
   ) {
     final factor = roundFactor.clamp(0.0, 1.0);
     final outerRadius = Radius.circular(24 * factor);
-    final innerRadius = Radius.circular(22 * factor);
     final centerRadius = Radius.circular(12 * factor);
 
-    // Center square (no neighbors) - radius 12
+    // Isolated modules (no neighbors) - radius 12
     if (!neighbours.hasClosest) {
       return RRect.fromRectAndRadius(moduleRect, centerRadius);
     }
 
-    // For outer ring: outer edge = 24, inner edge = 22
+    // Connected modules: round outer corners, zero inner corners for smooth flow
     return RRect.fromRectAndCorners(
       moduleRect,
-      topLeft: neighbours.atTopOrLeft
-          ? (neighbours.atTopAndLeft ? Radius.zero : innerRadius)
-          : outerRadius,
-      topRight: neighbours.atTopOrRight
-          ? (neighbours.atTopAndRight ? Radius.zero : innerRadius)
-          : outerRadius,
-      bottomLeft: neighbours.atBottomOrLeft
-          ? (neighbours.atBottomAndLeft ? Radius.zero : innerRadius)
-          : outerRadius,
-      bottomRight: neighbours.atBottomOrRight
-          ? (neighbours.atBottomAndRight ? Radius.zero : innerRadius)
-          : outerRadius,
+      topLeft: neighbours.atTopOrLeft ? Radius.circular(40) : outerRadius,
+      topRight: neighbours.atTopOrRight ? Radius.zero : outerRadius,
+      bottomLeft: neighbours.atBottomOrLeft ? Radius.zero : outerRadius,
+      bottomRight: neighbours.atBottomOrRight ? Radius.zero : outerRadius,
     );
   }
 
